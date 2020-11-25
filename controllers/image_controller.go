@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lequocduyquang/cdn-service/db"
 	"github.com/lequocduyquang/cdn-service/utils"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
@@ -37,7 +38,9 @@ func (i *imageController) Upload(c *gin.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	uploadStream, err := bucket.OpenUploadStream(header.Filename)
+	randomID := uuid.New()
+	fileName := randomID.String() + "-" + header.Filename
+	uploadStream, err := bucket.OpenUploadStream(fileName)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -50,7 +53,7 @@ func (i *imageController) Upload(c *gin.Context) {
 	fileSize, err := uploadStream.Write(data)
 
 	c.JSON(http.StatusOK, gin.H{
-		"file_name": header.Filename,
+		"file_name": fileName,
 		"file_size": fileSize,
 	})
 }
