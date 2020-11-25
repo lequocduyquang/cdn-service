@@ -1,8 +1,10 @@
 package controllers
 
 import (
-	"io/ioutil"
+	"io"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,9 +29,19 @@ func (i *imageController) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	data, err := ioutil.ReadAll(file)
+	out, err := os.Create("public/" + header.Filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer out.Close()
+	_, err = io.Copy(out, file)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// data, err := ioutil.ReadAll(file)
 	c.JSON(http.StatusOK, gin.H{
 		"file_name": header.Filename,
-		"data":      data,
 	})
 }
