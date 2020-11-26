@@ -6,4 +6,5 @@ func mapUrls() {
 	router.GET("/ping", controllers.PingController.Ping)
 
 	router.POST("/upload", controllers.ImageController.Upload)
+	router.GET("/image/:filename", controllers.ImageController.GetByName)
 }
