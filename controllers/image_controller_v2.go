@@ -2,8 +2,10 @@ package controllers
 
 import (
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,7 @@ var (
 // ImageControllerV2Interface interface
 type ImageControllerV2Interface interface {
 	Upload(c *gin.Context)
+	GetByName(c *gin.Context)
 }
 
 type imageControllerV2 struct{}
@@ -30,7 +33,7 @@ var (
 
 func (i *imageControllerV2) Upload(c *gin.Context) {
 	var err error
-	bucket := "cdn_lotus_bucket"
+	bucket := os.Getenv("GCP_BUCKET")
 	ctx := appengine.NewContext(c.Request)
 
 	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
@@ -81,25 +84,41 @@ func (i *imageControllerV2) Upload(c *gin.Context) {
 		"message":  "file uploaded successfully",
 		"pathname": resultURL.EscapedPath(),
 	})
+}
 
-	/*
-		file, header, err := c.Request.FormFile("file")
-		if err != nil {
-			restErr := utils.NewBadRequestError(err.Error())
-			c.JSON(restErr.Status(), restErr)
-			return
-		}
-		defer file.Close()
+func (i *imageControllerV2) GetByName(c *gin.Context) {
+	var err error
+	fileName := c.Param("filename")
+	bucket := os.Getenv("GCP_BUCKET")
+	ctx := appengine.NewContext(c.Request)
 
-		fileName, fileSize, err := services.ImageService.Upload(file, *header)
-		if err != nil {
-			restErr := utils.NewBadRequestError(err.Error())
-			c.JSON(restErr.Status(), restErr)
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"file_name": fileName,
-			"file_size": fileSize,
+	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+			"error":   true,
 		})
-	*/
+		return
+	}
+
+	rc, err := storageClient.Bucket(bucket).Object(fileName).NewReader(ctx)
+	if err != nil {
+		restErr := utils.NewBadRequestError(err.Error())
+		c.JSON(restErr.Status(), restErr)
+		return
+	}
+
+	defer rc.Close()
+
+	data, err := ioutil.ReadAll(rc)
+	if err != nil {
+		restErr := utils.NewBadRequestError(err.Error())
+		c.JSON(restErr.Status(), restErr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "get file successfully",
+		"data":    data,
+	})
 }
