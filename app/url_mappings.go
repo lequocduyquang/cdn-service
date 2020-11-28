@@ -10,4 +10,6 @@ func mapUrls() {
 
 	router.POST("/v2/upload", controllers.ImageControllerV2.Upload)
 	router.GET("/v2/image/:filename", controllers.ImageControllerV2.GetByName)
+	router.DELETE("/v2/image/:filename", controllers.ImageControllerV2.Delete)
+
 }

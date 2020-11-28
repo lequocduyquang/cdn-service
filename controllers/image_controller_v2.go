@@ -23,6 +23,7 @@ var (
 type ImageControllerV2Interface interface {
 	Upload(c *gin.Context)
 	GetByName(c *gin.Context)
+	Delete(c *gin.Context)
 }
 
 type imageControllerV2 struct{}
@@ -120,5 +121,32 @@ func (i *imageControllerV2) GetByName(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "get file successfully",
 		"data":    data,
+	})
+}
+
+func (i *imageControllerV2) Delete(c *gin.Context) {
+	var err error
+	fileName := c.Param("filename")
+	bucket := os.Getenv("GCP_BUCKET")
+	ctx := appengine.NewContext(c.Request)
+
+	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+			"error":   true,
+		})
+		return
+	}
+
+	obj := storageClient.Bucket(bucket).Object(fileName)
+	if err := obj.Delete(ctx); err != nil {
+		restErr := utils.NewBadRequestError(err.Error())
+		c.JSON(restErr.Status(), restErr)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "delete file successfully",
 	})
 }
