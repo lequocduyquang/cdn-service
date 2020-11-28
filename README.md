@@ -1,2 +1,2 @@
 # cdn-service
-Image upload service API with Golang and MongoDB GridFS
+Image upload service API with Golang, GCP and MongoDB GridFS
