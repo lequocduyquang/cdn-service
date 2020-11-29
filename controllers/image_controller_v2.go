@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,47 +28,26 @@ type ImageControllerV2Interface interface {
 type imageControllerV2 struct{}
 
 func (i *imageControllerV2) UploadMultiple(c *gin.Context) {
+	var results []*url.URL
 	ctx := appengine.NewContext(c.Request)
 	storageClient, _ := clients.InitiateGCPClient(ctx)
 
 	form, _ := c.MultipartForm()
 	files := form.File["files"]
 
-	/*
-		image service
-	*/
-
 	for _, file := range files {
-		sw := storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(file.Filename).NewWriter(ctx)
-		data, err := file.Open()
-
-		if _, err := io.Copy(sw, data); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"message": err.Error(),
-				"error":   true,
-			})
-			return
-		}
-
-		if err := sw.Close(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"message": err.Error(),
-				"error":   true,
-			})
-			return
-		}
-
-		_, err = url.Parse("/" + os.Getenv("GCP_BUCKET") + "/" + sw.Attrs().Name)
+		data, _ := file.Open()
+		resultURL, err := services.GCPService.Upload(ctx, storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(file.Filename), data)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"message": err.Error(),
-				"Error":   true,
-			})
+			restErr := utils.NewBadRequestError(err.Error())
+			c.JSON(restErr.Status(), restErr)
 			return
 		}
+		results = append(results, resultURL)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Files uploaded successfully",
+		"data":    results,
 	})
 }
 
