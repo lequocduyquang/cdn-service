@@ -24,6 +24,7 @@ type ImageControllerV2Interface interface {
 	Upload(c *gin.Context)
 	GetByName(c *gin.Context)
 	Delete(c *gin.Context)
+	UploadMultiple(c *gin.Context)
 }
 
 type imageControllerV2 struct{}
@@ -31,6 +32,47 @@ type imageControllerV2 struct{}
 var (
 	storageClient *storage.Client
 )
+
+func (i *imageControllerV2) UploadMultiple(c *gin.Context) {
+	bucket := os.Getenv("GCP_BUCKET")
+	ctx := appengine.NewContext(c.Request)
+
+	storageClient, _ = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	form, _ := c.MultipartForm()
+	files := form.File["files"]
+	for _, file := range files {
+		sw := storageClient.Bucket(bucket).Object(file.Filename).NewWriter(ctx)
+		data, err := file.Open()
+
+		if _, err := io.Copy(sw, data); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": err.Error(),
+				"error":   true,
+			})
+			return
+		}
+
+		if err := sw.Close(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": err.Error(),
+				"error":   true,
+			})
+			return
+		}
+
+		_, err = url.Parse("/" + bucket + "/" + sw.Attrs().Name)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": err.Error(),
+				"Error":   true,
+			})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Files uploaded successfully",
+	})
+}
 
 func (i *imageControllerV2) Upload(c *gin.Context) {
 	var err error
@@ -140,6 +182,7 @@ func (i *imageControllerV2) Delete(c *gin.Context) {
 	}
 
 	obj := storageClient.Bucket(bucket).Object(fileName)
+
 	if err := obj.Delete(ctx); err != nil {
 		restErr := utils.NewBadRequestError(err.Error())
 		c.JSON(restErr.Status(), restErr)
