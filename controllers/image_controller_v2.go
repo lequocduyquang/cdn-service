@@ -2,15 +2,14 @@ package controllers
 
 import (
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 
-	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
+	"github.com/lequocduyquang/cdn-service/clients"
+	"github.com/lequocduyquang/cdn-service/services"
 	"github.com/lequocduyquang/cdn-service/utils"
-	"google.golang.org/api/option"
 	"google.golang.org/appengine"
 )
 
@@ -29,19 +28,19 @@ type ImageControllerV2Interface interface {
 
 type imageControllerV2 struct{}
 
-var (
-	storageClient *storage.Client
-)
-
 func (i *imageControllerV2) UploadMultiple(c *gin.Context) {
-	bucket := os.Getenv("GCP_BUCKET")
 	ctx := appengine.NewContext(c.Request)
+	storageClient, _ := clients.InitiateGCPClient(ctx)
 
-	storageClient, _ = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
 	form, _ := c.MultipartForm()
 	files := form.File["files"]
+
+	/*
+		image service
+	*/
+
 	for _, file := range files {
-		sw := storageClient.Bucket(bucket).Object(file.Filename).NewWriter(ctx)
+		sw := storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(file.Filename).NewWriter(ctx)
 		data, err := file.Open()
 
 		if _, err := io.Copy(sw, data); err != nil {
@@ -60,7 +59,7 @@ func (i *imageControllerV2) UploadMultiple(c *gin.Context) {
 			return
 		}
 
-		_, err = url.Parse("/" + bucket + "/" + sw.Attrs().Name)
+		_, err = url.Parse("/" + os.Getenv("GCP_BUCKET") + "/" + sw.Attrs().Name)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"message": err.Error(),
@@ -75,11 +74,8 @@ func (i *imageControllerV2) UploadMultiple(c *gin.Context) {
 }
 
 func (i *imageControllerV2) Upload(c *gin.Context) {
-	var err error
-	bucket := os.Getenv("GCP_BUCKET")
 	ctx := appengine.NewContext(c.Request)
-
-	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	storageClient, err := clients.InitiateGCPClient(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -96,33 +92,12 @@ func (i *imageControllerV2) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	sw := storageClient.Bucket(bucket).Object(header.Filename).NewWriter(ctx)
-
-	if _, err := io.Copy(sw, file); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-			"error":   true,
-		})
-		return
-	}
-
-	if err := sw.Close(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-			"error":   true,
-		})
-		return
-	}
-
-	resultURL, err := url.Parse("/" + bucket + "/" + sw.Attrs().Name)
+	resultURL, err := services.GCPService.Upload(ctx, storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(header.Filename), file)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-			"Error":   true,
-		})
+		restErr := utils.NewBadRequestError(err.Error())
+		c.JSON(restErr.Status(), restErr)
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "file uploaded successfully",
 		"pathname": resultURL.EscapedPath(),
@@ -132,10 +107,8 @@ func (i *imageControllerV2) Upload(c *gin.Context) {
 func (i *imageControllerV2) GetByName(c *gin.Context) {
 	var err error
 	fileName := c.Param("filename")
-	bucket := os.Getenv("GCP_BUCKET")
 	ctx := appengine.NewContext(c.Request)
-
-	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	storageClient, err := clients.InitiateGCPClient(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -143,23 +116,12 @@ func (i *imageControllerV2) GetByName(c *gin.Context) {
 		})
 		return
 	}
-
-	rc, err := storageClient.Bucket(bucket).Object(fileName).NewReader(ctx)
+	data, err := services.GCPService.Get(ctx, storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(fileName))
 	if err != nil {
 		restErr := utils.NewBadRequestError(err.Error())
 		c.JSON(restErr.Status(), restErr)
 		return
 	}
-
-	defer rc.Close()
-
-	data, err := ioutil.ReadAll(rc)
-	if err != nil {
-		restErr := utils.NewBadRequestError(err.Error())
-		c.JSON(restErr.Status(), restErr)
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"message": "get file successfully",
 		"data":    data,
@@ -167,12 +129,9 @@ func (i *imageControllerV2) GetByName(c *gin.Context) {
 }
 
 func (i *imageControllerV2) Delete(c *gin.Context) {
-	var err error
 	fileName := c.Param("filename")
-	bucket := os.Getenv("GCP_BUCKET")
 	ctx := appengine.NewContext(c.Request)
-
-	storageClient, err = storage.NewClient(ctx, option.WithCredentialsFile("lotus-fitness.json"))
+	storageClient, err := clients.InitiateGCPClient(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -180,10 +139,7 @@ func (i *imageControllerV2) Delete(c *gin.Context) {
 		})
 		return
 	}
-
-	obj := storageClient.Bucket(bucket).Object(fileName)
-
-	if err := obj.Delete(ctx); err != nil {
+	if err := services.GCPService.Delete(ctx, storageClient.Bucket(os.Getenv("GCP_BUCKET")).Object(fileName)); err != nil {
 		restErr := utils.NewBadRequestError(err.Error())
 		c.JSON(restErr.Status(), restErr)
 		return
